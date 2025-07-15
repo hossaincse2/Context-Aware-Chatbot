@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Context-Aware Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.3.4/axios.min.js"></script>
+    <style>
+        .typing-indicator {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .message-animation {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .chat-scroll {
+            scroll-behavior: smooth;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">Context-Aware Chatbot</h1>
+            <p class="text-gray-600">Powered by Vector Database, Hybrid Search, Redis & LangChain</p>
+            
+            <!-- Stats Section -->
+            <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-blue-50 p-3 rounded-lg">
+                    <div class="text-sm text-blue-600 font-medium">Documents</div>
+                    <div id="doc-count" class="text-lg font-bold text-blue-800">0</div>
+                </div>
+                <div class="bg-green-50 p-3 rounded-lg">
+                    <div class="text-sm text-green-600 font-medium">Qdrant</div>
+                    <div id="qdrant-status" class="text-lg font-bold text-green-800">Connected</div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded-lg">
+                    <div class="text-sm text-purple-600 font-medium">Redis</div>
+                    <div id="redis-status" class="text-lg font-bold text-purple-800">Connected</div>
+                </div>
+                <div class="bg-orange-50 p-3 rounded-lg">
+                    <div class="text-sm text-orange-600 font-medium">Messages</div>
+                    <div id="message-count" class="text-lg font-bold text-orange-800">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Document Upload Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Add Documents</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Document Content</label>
+                    <textarea 
+                        id="document-content" 
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        rows="4"
+                        placeholder="Enter document content here..."
+                    ></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Topic</label>
+                        <input 
+                            type="text" 
+                            id="document-topic"
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="e.g., programming"
+                        >
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                        <input 
+                            type="text" 
+                            id="document-category"
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="e.g., python"
+                        >
+                    </div>
+                </div>
+                <button 
+                    onclick="addDocument()"
+                    class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                >
+                    Add Document
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat Interface -->
+        <div class="bg-white rounded-lg shadow-md overflow-hidden">
+            <!-- Chat Header -->
+            <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4">
+                <h2 class="text-xl font-semibold">Chat Interface</h2>
+                <p class="text-blue-100 text-sm">Ask questions about your documents</p>
+            </div>
+
+            <!-- Chat Messages -->
+            <div 
+                id="chat-messages" 
+                class="h-96 overflow-y-auto p-4 space-y-4 chat-scroll bg-gray-50"
+            >
+                <div class="flex items-center justify-center text-gray-500 text-sm">
+                    <div class="bg-white px-4 py-2 rounded-full shadow-sm">
+                        Start a conversation...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="p-4 bg-white border-t border-gray-200">
+                <div class="flex space-x-4">
+                    <input 
+                        type="text" 
+                        id="chat-input"
+                        class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Type your message..."
+                        onkeypress="handleKeyPress(event)"
+                    >
+                    <button 
+                        onclick="sendMessage()"
+                        class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
+                    >
+                        <span>Send</span>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="flex justify-between items-center mt-2">
+                    <div class="text-xs text-gray-500">
+                        <span id="context-info">Context: 0 topics</span>
+                    </div>
+                    <button 
+                        onclick="clearHistory()"
+                        class="text-xs text-red-600 hover:text-red-800 transition-colors duration-200"
+                    >
+                        Clear History
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sources Panel -->
+        <div id="sources-panel" class="mt-6 bg-white rounded-lg shadow-md p-6 hidden">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Sources Used</h3>
+            <div id="sources-list" class="space-y-2"></div>
+        </div>
+    </div>
+
+    <script>
+        let messageCount = 0;
+        let userId = 'user_' + Math.random().toString(36).substr(2, 9);
+        let isTyping = false;
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+        });
+
+        // Load statistics
+        async function loadStats() {
+            try {
+                const response = await axios.get('/api/stats');
+                const stats = response.data;
+                
+                document.getElementById('doc-count').textContent = stats.document_count || 0;
+                document.getElementById('qdrant-status').textContent = stats.qdrant_status || 'Disconnected';
+                document.getElementById('redis-status').textContent = stats.redis_status || 'Disconnected';
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Add document to knowledge base
+        async function addDocument() {
+            const content = document.getElementById('document-content').value.trim();
+            const topic = document.getElementById('document-topic').value.trim();
+            const category = document.getElementById('document-category').value.trim();
+
+            if (!content) {
+                alert('Please enter document content');
+                return;
+            }
+
+            try {
+                const response = await axios.post('/api/add_documents', {
+                    documents: [content],
+                    metadata: [{
+                        topic: topic || 'general',
+                        category: category || 'uncategorized'
+                    }]
+                });
+
+                if (response.data.message) {
+                    alert('Document added successfully!');
+                    document.getElementById('document-content').value = '';
+                    document.getElementById('document-topic').value = '';
+                    document.getElementById('document-category').value = '';
+                    loadStats();
+                }
+            } catch (error) {
+                console.error('Error adding document:', error);
+                alert('Error adding document. Please try again.');
+            }
+        }
+
+        // Handle enter key in chat input
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // Send message
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+
+            if (!message || isTyping) return;
+
+            input.value = '';
+            messageCount++;
+            document.getElementById('message-count').textContent = messageCount;
+
+            // Add user message to chat
+            addMessageToChat(message, 'user');
+
+            // Show typing indicator
+            isTyping = true;
+            showTypingIndicator();
+
+            try {
+                const response = await axios.post('/api/chat', {
+                    message: message,
+                    user_id: userId
+                });
+
+                const result = response.data;
+                
+                // Remove typing indicator
+                hideTypingIndicator();
+                
+                // Add bot response
+                addMessageToChat(result.response, 'bot');
+                
+                // Update context info
+                updateContextInfo(result.context);
+                
+                // Show sources if available
+                if (result.sources && result.sources.length > 0) {
+                    showSources(result.sources);
+                }
+
+            } catch (error) {
+                console.error('Error sending message:', error);
+                hideTypingIndicator();
+                addMessageToChat('Sorry, I encountered an error. Please try again.', 'bot', true);
+            }
+
+            isTyping = false;
+        }
+
+        // Add message to chat interface
+        function addMessageToChat(message, sender, isError = false) {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message-animation ${sender === 'user' ? 'flex justify-end' : 'flex justify-start'}`;
+
+            const messageContent = document.createElement('div');
+            messageContent.className = `max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                sender === 'user' 
+                    ? 'bg-blue-600 text-white' 
+                    : isError 
+                        ? 'bg-red-100 text-red-800 border border-red-300'
+                        : 'bg-white text-gray-800 shadow-sm border border-gray-200'
+            }`;
+
+            // Format message with basic markdown support
+            const formattedMessage = message
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+
+            messageContent.innerHTML = formattedMessage;
+            messageDiv.appendChild(messageContent);
+
+            // Add timestamp
+            const timestamp = document.createElement('div');
+            timestamp.className = `text-xs text-gray-500 mt-1 ${sender === 'user' ? 'text-right' : 'text-left'}`;
+            timestamp.textContent = new Date().toLocaleTimeString();
+            messageDiv.appendChild(timestamp);
+
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Show typing indicator
+        function showTypingIndicator() {
+            const chatMessages = document.getElementById('chat-messages');
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'typing-indicator';
+            typingDiv.className = 'flex justify-start';
+
+            const typingContent = document.createElement('div');
+            typingContent.className = 'bg-gray-200 text-gray-600 px-4 py-2 rounded-lg typing-indicator';
+            typingContent.innerHTML = '• • • Typing...';
+
+            typingDiv.appendChild(typingContent);
+            chatMessages.appendChild(typingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Hide typing indicator
+        function hideTypingIndicator() {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+        }
+
+        // Update context information
+        function updateContextInfo(context) {
+            const contextInfo = document.getElementById('context-info');
+            const topicCount = context.topics ? context.topics.length : 0;
+            const messageCount = context.message_count || 0;
+            
+            contextInfo.textContent = `Context: ${topicCount} topics, ${messageCount} messages`;
+        }
+
+        // Show sources panel
+        function showSources(sources) {
+            const sourcesPanel = document.getElementById('sources-panel');
+            const sourcesList = document.getElementById('sources-list');
+            
+            sourcesList.innerHTML = '';
+            
+            sources.forEach((source, index) => {
+                const sourceDiv = document.createElement('div');
+                sourceDiv.className = 'bg-gray-50 p-3 rounded-lg border border-gray-200';
+                
+                const sourceHeader = document.createElement('div');
+                sourceHeader.className = 'flex justify-between items-center mb-2';
+                
+                const sourceTitle = document.createElement('div');
+                sourceTitle.className = 'font-medium text-gray-800';
+                sourceTitle.textContent = `Source ${index + 1}`;
+                
+                const sourceScore = document.createElement('div');
+                sourceScore.className = `text-xs px-2 py-1 rounded-full ${
+                    source.source === 'vector' ? 'bg-blue-100 text-blue-800' :
+                    source.source === 'keyword' ? 'bg-green-100 text-green-800' :
+                    'bg-purple-100 text-purple-800'
+                }`;
+                sourceScore.textContent = `${source.source} (${source.score.toFixed(3)})`;
+                
+                sourceHeader.appendChild(sourceTitle);
+                sourceHeader.appendChild(sourceScore);
+                
+                const sourceContent = document.createElement('div');
+                sourceContent.className = 'text-sm text-gray-600';
+                sourceContent.textContent = source.content;
+                
+                sourceDiv.appendChild(sourceHeader);
+                sourceDiv.appendChild(sourceContent);
+                sourcesList.appendChild(sourceDiv);
+            });
+            
+            sourcesPanel.classList.remove('hidden');
+        }
+
+        // Clear conversation history
+        async function clearHistory() {
+            if (!confirm('Are you sure you want to clear the conversation history?')) {
+                return;
+            }
+
+            try {
+                await axios.post('/api/clear_history', {
+                    user_id: userId
+                });
+
+                // Clear chat messages
+                const chatMessages = document.getElementById('chat-messages');
+                chatMessages.innerHTML = `
+                    <div class="flex items-center justify-center text-gray-500 text-sm">
+                        <div class="bg-white px-4 py-2 rounded-full shadow-sm">
+                            Start a conversation...
+                        </div>
+                    </div>
+                `;
+
+                // Hide sources panel
+                document.getElementById('sources-panel').classList.add('hidden');
+
+                // Reset context info
+                document.getElementById('context-info').textContent = 'Context: 0 topics';
+                
+                // Reset message count
+                messageCount = 0;
+                document.getElementById('message-count').textContent = messageCount;
+
+                alert('Conversation history cleared!');
+            } catch (error) {
+                console.error('Error clearing history:', error);
+                alert('Error clearing history. Please try again.');
+            }
+        }
+
+        // Auto-refresh stats every 30 seconds
+        setInterval(loadStats, 30000);
+
+        // Add some sample messages on load for demo
+        setTimeout(() => {
+            if (messageCount === 0) {
+                addMessageToChat('Welcome! I\'m your context-aware chatbot. You can ask me questions about the documents in my knowledge base.', 'bot');
+                addMessageToChat('Try asking: "What is Python?" or "Tell me about machine learning"', 'bot');
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

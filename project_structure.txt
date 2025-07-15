@@ -1,0 +1,373 @@
+chatbot_flask_app/
+├── app.py                          # Main Flask application
+├── requirements.txt                # Python dependencies
+├── templates/
+│   └── index.html                 # HTML template with Tailwind CSS
+├── static/
+│   ├── css/
+│   │   └── style.css              # Additional custom styles
+│   └── js/
+│       └── app.js                 # Additional JavaScript functionality
+├── config.py                      # Configuration settings
+├── utils/
+│   ├── __init__.py
+│   ├── chatbot.py                 # Chatbot implementation
+│   └── search.py                  # Search utilities
+└── docker-compose.yml             # Docker setup for Qdrant and Redis
+
+=== requirements.txt ===
+flask==2.3.3
+flask-cors==4.0.0
+qdrant-client==1.6.4
+redis==5.0.1
+langchain==0.0.340
+sentence-transformers==2.2.2
+transformers==4.35.2
+torch==2.1.1
+numpy==1.25.2
+rank-bm25==0.2.2
+nltk==3.8.1
+requests==2.31.0
+python-dotenv==1.0.0
+gunicorn==21.2.0
+
+=== config.py ===
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class Config:
+    # Database configurations
+    QDRANT_URL = os.getenv('QDRANT_URL', 'http://localhost:6333')
+    REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
+    
+    # API configurations
+    GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+    
+    # Flask configurations
+    SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
+    DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+    
+    # Chatbot configurations
+    COLLECTION_NAME = os.getenv('COLLECTION_NAME', 'chatbot_knowledge')
+    EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
+    CHUNK_SIZE = int(os.getenv('CHUNK_SIZE', '1000'))
+    CHUNK_OVERLAP = int(os.getenv('CHUNK_OVERLAP', '200'))
+    
+    # Search configurations
+    TOP_K_RESULTS = int(os.getenv('TOP_K_RESULTS', '5'))
+    VECTOR_WEIGHT = float(os.getenv('VECTOR_WEIGHT', '0.7'))
+    KEYWORD_WEIGHT = float(os.getenv('KEYWORD_WEIGHT', '0.3'))
+
+=== docker-compose.yml ===
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  chatbot-app:
+    build: .
+    ports:
+      - "5000:5000"
+    depends_on:
+      - qdrant
+      - redis
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+    volumes:
+      - ./:/app
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+  redis_data:
+
+=== Dockerfile ===
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Download NLTK data
+RUN python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p templates static/css static/js utils
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV FLASK_APP=app.py
+
+# Expose port
+EXPOSE 5000
+
+# Run the application
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+
+=== .env (example) ===
+# Database URLs
+QDRANT_URL=http://localhost:6333
+REDIS_URL=redis://localhost:6379
+
+# API Keys
+GITHUB_TOKEN=your_github_token_here
+
+# Flask Configuration
+SECRET_KEY=your-secret-key-here
+DEBUG=True
+
+# Chatbot Configuration
+COLLECTION_NAME=chatbot_knowledge
+EMBEDDING_MODEL=all-MiniLM-L6-v2
+CHUNK_SIZE=1000
+CHUNK_OVERLAP=200
+
+# Search Configuration
+TOP_K_RESULTS=5
+VECTOR_WEIGHT=0.7
+KEYWORD_WEIGHT=0.3
+
+=== static/css/style.css ===
+/* Additional custom styles */
+.gradient-bg {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.message-bubble {
+    max-width: 80%;
+    word-wrap: break-word;
+}
+
+.source-item {
+    transition: all 0.3s ease;
+}
+
+.source-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.typing-dots {
+    display: inline-block;
+    animation: typing 1.4s infinite;
+}
+
+@keyframes typing {
+    0%, 60%, 100% { opacity: 1; }
+    30% { opacity: 0.4; }
+}
+
+.fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.slide-up {
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+=== static/js/app.js ===
+// Additional JavaScript functionality
+class ChatbotUI {
+    constructor() {
+        this.messageCount = 0;
+        this.userId = 'user_' + Math.random().toString(36).substr(2, 9);
+        this.isTyping = false;
+        this.init();
+    }
+
+    init() {
+        this.setupEventListeners();
+        this.loadStats();
+        this.setupAutoRefresh();
+    }
+
+    setupEventListeners() {
+        // File upload handling
+        document.getElementById('file-upload')?.addEventListener('change', this.handleFileUpload.bind(this));
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                this.sendMessage();
+            }
+            if (e.ctrlKey && e.key === 'l') {
+                e.preventDefault();
+                this.clearHistory();
+            }
+        });
+    }
+
+    async handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (file.type === 'text/plain') {
+            const content = await file.text();
+            document.getElementById('document-content').value = content;
+        } else {
+            alert('Only text files are supported currently.');
+        }
+    }
+
+    setupAutoRefresh() {
+        setInterval(() => {
+            this.loadStats();
+        }, 30000);
+    }
+
+    formatMessage(message) {
+        // Enhanced message formatting
+        return message
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`(.*?)`/g, '<code class="bg-gray-100 px-1 rounded">$1</code>')
+            .replace(/\n/g, '<br>');
+    }
+
+    showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 ${
+            type === 'success' ? 'bg-green-500 text-white' :
+            type === 'error' ? 'bg-red-500 text-white' :
+            'bg-blue-500 text-white'
+        }`;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    }
+
+    exportChat() {
+        const messages = document.querySelectorAll('#chat-messages .message-animation');
+        let chatData = [];
+        
+        messages.forEach(msg => {
+            const isUser = msg.classList.contains('justify-end');
+            const content = msg.querySelector('div').textContent;
+            const timestamp = msg.querySelector('.text-xs').textContent;
+            
+            chatData.push({
+                sender: isUser ? 'user' : 'bot',
+                message: content,
+                timestamp: timestamp
+            });
+        });
+        
+        const blob = new Blob([JSON.stringify(chatData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'chat_history.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+}
+
+// Initialize the chatbot UI
+const chatbotUI = new ChatbotUI();
+
+=== Installation and Setup Instructions ===
+
+1. **Clone and Setup:**
+   ```bash
+   git clone <repository>
+   cd chatbot_flask_app
+   pip install -r requirements.txt
+   ```
+
+2. **Environment Setup:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configurations
+   ```
+
+3. **Start Services (Option 1 - Docker):**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Start Services (Option 2 - Local):**
+   ```bash
+   # Terminal 1: Start Qdrant
+   docker run -p 6333:6333 qdrant/qdrant
+
+   # Terminal 2: Start Redis
+   docker run -p 6379:6379 redis:7-alpine
+
+   # Terminal 3: Start Flask App
+   python app.py
+   ```
+
+5. **Access the Application:**
+   - Open browser to `http://localhost:5000`
+   - API endpoints available at `/api/*`
+
+=== API Endpoints ===
+
+- GET `/` - Web interface
+- POST `/api/chat` - Send message to chatbot
+- GET `/api/stats` - Get system statistics
+- POST `/api/add_documents` - Add documents to knowledge base
+- POST `/api/clear_history` - Clear conversation history
+- GET `/api/health` - Health check endpoint
+
+=== Features ===
+
+✅ Vector Database (Qdrant) integration
+✅ Redis for caching and session management
+✅ Hybrid search (Vector + BM25)
+✅ LangChain integration
+✅ GitHub Models API support
+✅ Responsive web interface with Tailwind CSS
+✅ Real-time chat functionality
+✅ Document upload and management
+✅ Conversation context tracking
+✅ Source attribution for responses
+✅ Docker containerization
+✅ Production-ready with Gunicorn
